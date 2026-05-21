@@ -1,0 +1,84 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User account data",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "username": { "type": "string" },
+        "rank": { "type": "string", "enum": ["ADMIN", "DEV", "MOD", "VETERAN", "MEMBRE"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "username", "rank", "createdAt"]
+    },
+    "Post": {
+      "title": "Forum Post",
+      "description": "A post in the official forum",
+      "type": "object",
+      "properties": {
+        "authorId": { "type": "string" },
+        "authorName": { "type": "string" },
+        "authorRank": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "category": { "type": "string", "enum": ["all", "discussion", "news", "suggestion", "bug"] },
+        "likes": { "type": "number" },
+        "commentsCount": { "type": "number" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "isPinned": { "type": "boolean" },
+        "hasStaffReply": { "type": "boolean" }
+      },
+      "required": ["authorId", "authorName", "title", "content", "category", "likes", "commentsCount", "timestamp"]
+    },
+    "Comment": {
+      "title": "Forum Comment",
+      "description": "A comment on a forum post",
+      "type": "object",
+      "properties": {
+        "authorId": { "type": "string" },
+        "authorName": { "type": "string" },
+        "authorRank": { "type": "string" },
+        "text": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "isStaff": { "type": "boolean" }
+      },
+      "required": ["authorId", "authorName", "text", "timestamp"]
+    },
+    "Report": {
+      "title": "Post Report",
+      "description": "A safety violation report against a forum post analyzed by AI",
+      "type": "object",
+      "properties": {
+        "reporterId": { "type": "string" },
+        "postId": { "type": "string" },
+        "reason": { "type": "string" },
+        "details": { "type": "string" },
+        "aiDecision": { "type": "string" },
+        "aiComment": { "type": "string" },
+        "violatesRules": { "type": "boolean" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["reporterId", "postId", "reason", "aiDecision", "aiComment", "violatesRules", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/posts/{postId}": {
+      "schema": "Post",
+      "description": "Forum posts"
+    },
+    "/posts/{postId}/comments/{commentId}": {
+      "schema": "Comment",
+      "description": "Comments on posts"
+    },
+    "/reports/{reportId}": {
+      "schema": "Report",
+      "description": "Moderation reports submitted by users and evaluated by AI"
+    }
+  }
+}

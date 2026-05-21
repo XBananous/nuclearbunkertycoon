@@ -1,0 +1,118 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- Validation Helpers ---
+
+    function isValidUser(data) {
+      return data.uid == request.auth.uid &&
+             data.username is string && data.username.size() >= 3 && data.username.size() <= 32 &&
+             data.email is string &&
+             data.rank in ["ADMIN", "DEV", "MOD", "VETERAN", "MEMBRE"] &&
+             (!('createdAt' in data) || data.createdAt == request.time || (resource != null && data.createdAt == resource.data.createdAt)) &&
+             (!('bio' in data) || (data.bio is string && data.bio.size() <= 200)) &&
+             (!('username_lowercase' in data) || data.username_lowercase is string) &&
+             (!('isVerified' in data) || data.isVerified is bool);
+    }
+
+    function isValidPost(data) {
+      return data.authorId == request.auth.uid &&
+             data.authorName is string && data.authorName.size() <= 50 &&
+             data.authorRank in ["ADMIN", "DEV", "MOD", "VETERAN", "MEMBRE"] &&
+             data.title is string && data.title.size() >= 3 && data.title.size() <= 200 &&
+             data.content is string && data.content.size() <= 10000 &&
+             data.category in ["all", "discussion", "news", "suggestion", "bug"] &&
+             data.likes is number &&
+             data.commentsCount is number &&
+             (!('timestamp' in data) || data.timestamp == request.time || (resource != null && data.timestamp == resource.data.timestamp));
+    }
+
+    function isValidComment(data) {
+      return data.authorId == request.auth.uid &&
+             data.authorName is string && data.authorName.size() <= 50 &&
+             data.text is string && data.text.size() > 0 && data.text.size() <= 2000;
+    }
+
+    function isValidReport(data) {
+      return data.reporterId == request.auth.uid &&
+             data.postId is string &&
+             data.reason is string && data.reason.size() <= 1000 &&
+             (!('details' in data) || (data.details is string && data.details.size() <= 2000)) &&
+             data.aiDecision is string &&
+             data.aiComment is string &&
+             data.violatesRules is bool &&
+             (!('timestamp' in data) || data.timestamp == request.time);
+    }
+
+    // --- Match Rules ---
+
+    function hasStaffPower() {
+      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.rank in ["ADMIN", "DEV"];
+    }
+
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create: if isOwner(userId) && isValidUser(incoming()) && incoming().rank == "MEMBRE";
+      allow update: if isOwner(userId) && isValidUser(incoming()) && 
+                    incoming().rank == existing().rank && 
+                    incoming().diff(existing()).affectedKeys().hasOnly(['username', 'username_lowercase', 'email', 'bio', 'isVerified']);
+    }
+
+    match /posts/{postId} {
+      allow read: if true;
+      allow create: if isSignedIn() && isValidPost(incoming()) && 
+                    incoming().likes == 0 && 
+                    incoming().commentsCount == 0 &&
+                    (!('isPinned' in incoming()) || incoming().isPinned == false) &&
+                    (!('hasStaffReply' in incoming()) || incoming().hasStaffReply == false);
+      
+      allow update: if (
+        // Action: Like or Unlike
+        (isSignedIn() && incoming().diff(existing()).affectedKeys().hasOnly(['likes']) && 
+         (incoming().likes == existing().likes + 1 || incoming().likes == existing().likes - 1)) ||
+        // Action: Staff moderation (Pinning/Unpinning)
+        (hasStaffPower() && incoming().diff(existing()).affectedKeys().hasOnly(['isPinned'])) ||
+        // Action: Comment count & Staff reply flag (Staff reply flag restricted to staff)
+        (hasStaffPower() && incoming().diff(existing()).affectedKeys().hasOnly(['commentsCount', 'hasStaffReply'])) ||
+        // Action: Normal user comment count increment or soft delete
+        (isSignedIn() && incoming().diff(existing()).affectedKeys().hasOnly(['commentsCount'])) ||
+        (isSignedIn() && incoming().diff(existing()).affectedKeys().hasOnly(['deleted']) && (isOwner(existing().authorId) || hasStaffPower())) ||
+        // Action: Edit content
+        (isOwner(existing().authorId) && isValidPost(incoming()) && 
+         incoming().diff(existing()).affectedKeys().hasOnly(['title', 'content', 'category']))
+      );
+    }
+
+    match /posts/{postId}/comments/{commentId} {
+      allow read: if true;
+      allow create: if isSignedIn() && isValidComment(incoming());
+      allow update, delete: if isOwner(existing().authorId);
+    }
+
+    match /reports/{reportId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidReport(incoming());
+    }
+  }
+}
